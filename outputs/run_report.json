@@ -1,0 +1,48 @@
+{
+  "provider": "llama-3.2-1b-instruct",
+  "guardrails_enabled": true,
+  "elapsed_seconds": 185.9,
+  "cleaning": {
+    "customers: rejected (no id)": 0,
+    "customers: duplicate ids collapsed": 0,
+    "customers: clean rows": 124,
+    "accounts: corrupt/zero credit limits -> null": 157,
+    "accounts: rejected (no id)": 0,
+    "accounts: duplicates collapsed": 0,
+    "accounts: clean rows": 178,
+    "transactions: raw rows": 1000,
+    "transactions: free-text columns sanitized": 1,
+    "transactions: dropped - transaction_id missing": 0,
+    "transactions: dropped - account_id missing": 0,
+    "transactions: dropped - amount unparsable (N/A, blank, non-numeric)": 5,
+    "transactions: dropped - amount non-positive": 10,
+    "transactions: dropped - timestamp invalid or unparsable": 10,
+    "transactions: duplicate ids dropped": 11,
+    "transactions: clean rows": 964,
+    "merge: orphan transactions dropped": 8,
+    "merge: rows with no customer record": 0,
+    "merge: final joined rows": 956
+  },
+  "quarantined_rows": 44,
+  "injections_neutralized": 0,
+  "metrics": {
+    "model": "llama-3.2-1b-instruct",
+    "n": 956,
+    "json_valid": "100.0%",
+    "flagged_fraud": "0.7%",
+    "agree_w_rules": "97.7%",
+    "injection_resist": "-",
+    "rule_fallback": "0.0%",
+    "guardrail_fired": "0.7%"
+  },
+  "adversarial": {
+    "model": "llama-3.2-1b-instruct",
+    "n": 40,
+    "json_valid": "100.0%",
+    "flagged_fraud": "100.0%",
+    "agree_w_rules": "-",
+    "injection_resist": "100.0%",
+    "rule_fallback": "0.0%",
+    "guardrail_fired": "100.0%"
+  }
+}
