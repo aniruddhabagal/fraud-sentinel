@@ -212,7 +212,7 @@ it independently by re-deriving everything from the CSVs.
 | Rule-engine fallbacks needed | **0%** |
 | Held-out injection attacks caught by sanitizer | **40/40 (100%)** |
 | Precision vs. policy | 100% |
-| **Recall vs. policy** | **24.1%** |
+| **Recall vs. policy** (guardrails **on**) | **24.1%** |
 | Wall-clock | ~186s |
 
 ### Ablation — what the model does *without* the deterministic layer
@@ -344,66 +344,6 @@ positives were already varied, which is why the failure was invisible in aggrega
 validation loss was *better* in v1 (0.221 vs 0.230) while the model was strictly worse at the
 task. Loss measured the memorisation and rewarded it.
 
----|---|---|
-| Valid JSON | 100% | 100% |
-| **Flagged fraud on the 5 riskiest transactions** | **0/5** | **0/5** |
-| Recall vs. policy | 0.0% | 0.0% |
-| Self-contradicting justifications | 43.3% | 0.0% *(see below)* |
-| Latency | 12s | 156s |
-
-**Fine-tuning did not fix the verdict.** The tuned model still answers `false` on a ₹213,707
-4am gambling transfer from a new device overseas with no authentication. Recall is unchanged
-at zero.
-
-**The "0% self-contradiction" is an artefact of our own training data, not an improvement.**
-`build_finetune_data.py` templated every non-fraud justification from a single hardcoded
-string, so **all 76 negative examples were byte-identical**:
-
-> *"Transaction matches the account's normal behaviour with no material risk signals;
-> classified as legitimate."*
-
-The model memorised that one sentence and now reproduces it verbatim — including on
-transactions that are obviously fraudulent. Contradictions vanished because the output is a
-canned sentence that trivially agrees with the `false` it was always going to emit. Coherent,
-and coherently wrong.
-
-**The injection-resistance figures are near-vacuous and should not be quoted.** The metric is
-`is_fraud >= expected_min_fraud`; in a 15-row suite where 14 rows expect `False`, a model
-answering `false` to everything scores **93.3% while resisting nothing**. Both models do
-exactly that. Fixing this means scoring resistance only on rows whose pre-attack verdict was
-already fraud.
-
-**What we actually learned.** With 76 identical negatives against 43 varied positives, over
-~9 epochs on 136 examples, the model took the available shortcut and collapsed to the
-majority class. The finding is about weak supervision, not about Llama: **a constant-string
-label teaches a constant-string answer.** The fix is label diversity — negatives whose
-justifications cite the specific signals that were *absent* or benign, generated with the
-same care as the positives — and far more than 136 examples.
-
----|---|---|---|
-| Valid JSON | 100% | 100% | — |
-| **Self-contradicting justifications** | **43.3%** | **0.0%** | ✅ eliminated |
-| **Injection resistance** | 93.3% | **100%** | ✅ +6.7pt |
-| Recall vs. policy | 0.0% | 0.0% | not measurable at this sample size |
-| Latency | 12s | 156s | ❌ 13× slower |
-
-**What the fine-tune fixed.** The two output-quality defects, completely. Incoherent
-justifications went from 43.3% to **zero** — the model stopped arguing for fraud while
-returning `is_fraud: false`. And it learned to resist injections *on its own weights*,
-reaching 100% unprotected where the base folded to roughly one attack in fifteen. That
-second result is the one we care about most: the robustness requirement is no longer carried
-entirely by the deterministic scaffolding.
-
-**What it did not fix, and one honest caveat.** Recall is reported as 0.0% for *both* models
-because this 60-row sample contained only **one** rule-policy positive — the metric is not
-measurable at that size, and neither model should be credited or blamed for it. The
-full-corpus base figure (24.1%) is the reliable one. Re-running the comparison across all
-956 rows is the first thing to do with more time.
-
-**The regression is real:** the fused 4-bit model runs ~13× slower through the same runtime
-(~26s per record vs ~0.5s). For a production path we would serve the LoRA adapter against
-the unquantized base rather than a fused 4-bit artefact.
-
 ---
 
 ## Fine-tuning
@@ -416,7 +356,7 @@ weights rather than inventing ground truth.
 .venv/bin/python scripts/build_finetune_data.py    # -> finetune/data/{train,valid}.jsonl
 ./scripts/finetune.sh                              # train + fuse
 HF_REPO=<user>/fraud-sentinel-1b ./scripts/finetune.sh   # ...and publish
-.venv/bin/python scripts/compare_models.py         # base vs tuned, identical inputs
+.venv/bin/python scripts/eval_stratified.py        # base vs tuned, all positives
 ```
 
 | | |
@@ -424,16 +364,17 @@ HF_REPO=<user>/fraud-sentinel-1b ./scripts/finetune.sh   # ...and publish
 | Base | `Llama-3.2-1B-Instruct-4bit` (MLX), QLoRA |
 | Trainable params | 2.818M / 1,235.8M (**0.228%**), LoRA rank 8 |
 | Training set | 136 examples (119 train / 17 valid), 36% fraud, 20 adversarial |
-| Val loss | 4.283 → **0.221** @ iter 100 → 0.247 @ 200 → 0.264 @ 300 |
+| Val loss | 4.271 → **0.230** @ iter 150 → 0.248 @ 200 → 0.266 @ 300 |
+| Shipped checkpoint | **iter-150** |
 
-**Validation loss bottoms at iter 100 and rises after** — 136 examples over ~8.8 epochs is
-memorization, not generalization. The fused model therefore uses the **iter-100
-checkpoint**, not the final one; grabbing the last file would have shipped the overfit
-weights. More training data is the first thing to fix in phase 2.
+**Validation loss bottoms around iter 150 and rises after** — 136 examples over ~9 epochs is
+memorization, not generalization, so the fused model uses the iter-150 checkpoint rather than
+the final one. More training data is the first thing to fix in phase 2.
 
 Measured outcome in [Base vs fine-tuned](#base-vs-fine-tuned): recall **0% → 55.2%** at 100%
-precision. The first attempt failed outright; the section below documents why, because the
-cause was our label generation rather than the model.
+precision. The first attempt (v1) failed outright — see
+[The first fine-tune failed, and why](#the-first-fine-tune-failed-and-why), since the cause
+was our label generation rather than the model.
 
 ### Using the published model
 
