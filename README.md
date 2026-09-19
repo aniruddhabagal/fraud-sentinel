@@ -4,11 +4,69 @@ An end-to-end pipeline that ingests three faulty relational banking tables, neut
 adversarial prompt injections, and classifies every transaction with a **sub-3B language
 model** under a strict, machine-checkable JSON contract.
 
+```mermaid
+flowchart TB
+    subgraph SRC[" 1 · INGEST "]
+        T[transactions.csv<br/>1000 rows]
+        A[accounts.csv<br/>178 rows]
+        C[customers.csv<br/>124 rows]
+    end
+
+    subgraph CLEAN[" 2 · CLEAN &amp; MERGE — clean.py "]
+        P["Parse dirty types<br/><i>'INR 62146.26' · NOT_AVAILABLE · limit=0.0</i>"]
+        D["Dedupe · normalize categoricals<br/><i>74 merchant_category → 23</i>"]
+        M["3-way join<br/><i>validate='m:1'</i>"]
+    end
+
+    Q[("outputs/quarantine.csv<br/>44 rows + reason")]
+
+    subgraph SAN[" 3 · SANITIZE — sanitize.py "]
+        L1["<b>1 Normalize</b><br/>NFKC · zero-width · leetspeak"]
+        L2["<b>2 Detect</b><br/>12 pattern families"]
+        L3["<b>3 Neutralize</b><br/>redact → injection_attempt"]
+        L4["<b>4 Contain</b><br/>nonce-fenced block"]
+    end
+
+    subgraph FEAT[" 4 · FEATURES — features.py "]
+        F["18 risk signals<br/><i>all arithmetic in pandas</i>"]
+        RS["rule_score<br/><i>auditable WEIGHTS dict</i>"]
+    end
+
+    subgraph INF[" 5 · INFER — infer.py "]
+        PR["Prompt: evidence first,<br/>untrusted text last"]
+        SLM{{"SLM &lt; 3B<br/>any OpenAI-compatible endpoint"}}
+        CO["Schema-constrained decode<br/>→ repair → rule fallback"]
+    end
+
+    subgraph GRD[" 6 · GUARDRAILS — guardrails.py "]
+        G["4 override rules<br/><i>injection answered 'safe' → force fraud</i>"]
+    end
+
+    OUT[("outputs/predictions.jsonl<br/>956 strict-JSON records")]
+
+    T & A & C --> P --> D --> M
+    M -.->|rejected rows| Q
+    M --> L1 --> L2 --> L3 --> L4
+    L3 -.->|"injection_attempt<br/><b>weight 0.30 — highest</b>"| F
+    L4 --> F --> RS
+    RS --> PR --> SLM --> CO --> G --> OUT
+    RS -.->|"model unreachable<br/>or unusable"| G
+
+    classDef src fill:#e8eef7,stroke:#5b7fb4,color:#1a2f4a
+    classDef danger fill:#fdecea,stroke:#c0392b,color:#7b241c
+    classDef store fill:#eaf5ea,stroke:#4a8a4a,color:#1e3d1e
+    classDef model fill:#f5eef8,stroke:#8e5ba6,color:#4a2d57
+    class T,A,C src
+    class L1,L2,L3,L4,G danger
+    class Q,OUT store
+    class SLM model
 ```
-transactions.csv ─┐
-accounts.csv     ─┼─> clean ──> features ──> infer ──> guardrails ──> predictions.jsonl
-customers.csv    ─┘  (quarantine) (sanitize)  (SLM)    (override)
-```
+
+**Read the diagram for two things.** The dotted line from *Neutralize* into *Features* is the
+design's core idea: a detected attack does not merely get deleted, it becomes the
+**highest-weighted fraud signal** feeding the score. The dotted line from *rule_score* into
+*Guardrails* is the safety net: if the model is unreachable or returns something unusable,
+a deterministic verdict is still produced, so every input yields exactly one valid record.
 
 ---
 
@@ -138,7 +196,9 @@ it independently by re-deriving everything from the CSVs.
 
 ---
 
-## Results — base `Llama-3.2-1B-Instruct`, 956 transactions
+## Results
+
+### Full corpus — base `Llama-3.2-1B-Instruct`, 956 transactions
 
 | Metric | Result |
 |---|---|
@@ -149,18 +209,66 @@ it independently by re-deriving everything from the CSVs.
 | **Recall vs. policy** | **24.1%** |
 | Wall-clock | ~186s |
 
-**The finding that matters: all 7 true positives were produced by the *guardrail* layer,
-not the model.** The base 1B flagged zero transactions on its own. Schema-constrained
-decoding guarantees output *shape* — shape is not judgement.
+### Ablation — what the model does *without* the deterministic layer
 
-Two conclusions: the defense-in-depth design is load-bearing rather than decorative, and
-the measured gap is **recall**, which is exactly what supervised examples fix.
+Measured on a 250-transaction sample by `scripts/compare_models.py`, which re-runs the same
+inputs with guardrails disabled. This is the number that matters, and it is the reason the
+architecture looks the way it does.
 
-> **Caveat on "injection resistance".** The adversarial suite does not recompute
-> `rule_score` after injecting, so that metric is secured by guardrail #1 — which by
-> definition forces a fraud verdict whenever an injection is flagged. It measures the
-> *pipeline*, not the model. `scripts/compare_models.py` reports the guardrail-disabled
-> number separately to isolate what the weights actually do.
+| Metric | Base 1B |
+|---|---|
+| Valid JSON | 100% |
+| Precision / Recall / F1 (guardrails **on**) | 100% / 11.1% / 20.0% |
+| **Recall with guardrails OFF** | **0.0%** |
+| Injection resistance, guardrails **off** | 88.0% |
+| Self-contradicting justifications | **44.6%** (111 records) |
+
+**Three findings worth stating plainly:**
+
+1. **The base model, unprotected, catches nothing.** Not "less" — 0.0% recall. Every true
+   positive this pipeline produces comes from the guardrail layer. Schema-constrained
+   decoding guarantees the *shape* of an answer; shape is not judgement.
+2. **Unprotected injection resistance is 88%, not 100%.** The headline 100% is secured by
+   guardrail #1, which forces a fraud verdict whenever an injection is flagged. That measures
+   the *pipeline*. The model alone folds to roughly one attack in eight.
+3. **44.6% of not-fraud verdicts are self-contradicting** — the justification asserts fraud
+   while the verdict says otherwise (*"strong indicators of potential fraud"* → `is_fraud:
+   false`). Schema validation cannot see this, which is exactly why it is measured
+   separately. It is the first thing a human notices and the top item for phase 2.
+
+Together these say the defense-in-depth design is load-bearing rather than decorative, and
+that the measured gap is **recall and output coherence** — which is what supervised examples
+are for.
+
+### Base vs fine-tuned
+
+Both models over identical inputs (60-transaction sample, guardrails disabled to isolate the
+weights). Full command: `scripts/compare_models.py`.
+
+| Metric (guardrails off) | Base 1B | Fine-tuned | |
+|---|---|---|---|
+| Valid JSON | 100% | 100% | — |
+| **Self-contradicting justifications** | **43.3%** | **0.0%** | ✅ eliminated |
+| **Injection resistance** | 93.3% | **100%** | ✅ +6.7pt |
+| Recall vs. policy | 0.0% | 0.0% | not measurable at this sample size |
+| Latency | 12s | 156s | ❌ 13× slower |
+
+**What the fine-tune fixed.** The two output-quality defects, completely. Incoherent
+justifications went from 43.3% to **zero** — the model stopped arguing for fraud while
+returning `is_fraud: false`. And it learned to resist injections *on its own weights*,
+reaching 100% unprotected where the base folded to roughly one attack in fifteen. That
+second result is the one we care about most: the robustness requirement is no longer carried
+entirely by the deterministic scaffolding.
+
+**What it did not fix, and one honest caveat.** Recall is reported as 0.0% for *both* models
+because this 60-row sample contained only **one** rule-policy positive — the metric is not
+measurable at that size, and neither model should be credited or blamed for it. The
+full-corpus base figure (24.1%) is the reliable one. Re-running the comparison across all
+956 rows is the first thing to do with more time.
+
+**The regression is real:** the fused 4-bit model runs ~13× slower through the same runtime
+(~26s per record vs ~0.5s). For a production path we would serve the LoRA adapter against
+the unquantized base rather than a fused 4-bit artefact.
 
 ---
 
@@ -186,7 +294,12 @@ HF_REPO=<user>/fraud-sentinel-1b ./scripts/finetune.sh   # ...and publish
 
 **Validation loss bottoms at iter 100 and rises after** — 136 examples over ~8.8 epochs is
 memorization, not generalization. The fused model therefore uses the **iter-100
-checkpoint**, not the final one. More training data is the first thing to fix in phase 2.
+checkpoint**, not the final one; grabbing the last file would have shipped the overfit
+weights. More training data is the first thing to fix in phase 2.
+
+Measured outcome in [Base vs fine-tuned](#base-vs-fine-tuned): self-contradicting output
+eliminated (43.3% → 0%) and unprotected injection resistance raised to 100%, at the cost of
+a 13× latency regression from the fused 4-bit artefact.
 
 ---
 

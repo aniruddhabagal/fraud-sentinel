@@ -161,8 +161,8 @@ def main() -> None:
 
     print(f"\n{'=' * 64}\n  BASE vs FINE-TUNED\n{'=' * 64}")
     print(table.to_string(index=False))
-    print(f"\n  (recall_raw and inj_resist_raw are measured with guardrails DISABLED,")
-    print(f"   isolating what the weights do on their own.)")
+    print("\n  (recall_raw and inj_resist_raw are measured with guardrails DISABLED,")
+    print("   isolating what the weights do on their own.)")
     print(f"\n  written to {out}")
 
 
