@@ -242,9 +242,85 @@ architecture looks the way it does.
    false`). Schema validation cannot see this, which is exactly why it is measured
    separately. It is the first thing a human notices and the top item for phase 2.
 
-Together these say the defense-in-depth design is load-bearing rather than decorative, and
-that the measured gap is **recall and output coherence** — which is what supervised examples
-are for.
+Together these say the defense-in-depth design is load-bearing rather than decorative. The
+next section shows the three findings share a single root cause — and that it is not the one
+the numbers first suggest.
+
+### Root cause: the JSON requirement is what breaks the model
+
+The 0% unprotected recall invites an obvious conclusion — that a 1B model cannot reason
+about fraud. That conclusion is wrong, and the distinction matters for what you build next.
+
+Same model, same prompt, same evidence, on the single riskiest transaction in the dataset
+(₹213,707 · gambling · 4am · new device · overseas · no authentication · overdrawn):
+
+| Output format | Verdict |
+|---|---|
+| JSON, `is_fraud` boolean field | **`false`** |
+| Plain English, "answer YES or NO" | **`YES`** — *"high-risk, unverified gambling transaction with suspicious characteristics"* |
+
+**The model identifies the fraud correctly. Asking for JSON destroys the answer.**
+
+Two hypotheses tested and rejected before landing on this:
+
+- *Constrained decoding is forcing the verdict.* No — disabling it entirely, the model still
+  emits `false` in free-form JSON.
+- *`is_fraud` is decoded before the justification, so the verdict is committed with no
+  reasoning tokens spent.* Plausible, but reordering the schema so `justification` generates
+  first changed nothing: **0/8 flagged either way.**
+
+What remains: after the tokens `{"is_fraud": `, a sub-3B model carries an overwhelming prior
+toward `false`, and that prior swamps the evidence in the prompt. The `justification` field
+draws from a different distribution and is unaffected — which is exactly why 44% of records
+pair a `false` verdict with text reading *"strong indicators of potential fraud"*. The
+self-contradiction and the zero recall are **one defect seen from two ends**, not two.
+
+The uncomfortable implication is worth stating: **the brief mandates strict JSON, and that
+mandate is what breaks the model.** The deterministic guardrail layer is not a crutch
+compensating for a weak model — it compensates for a format-induced failure the requirements
+themselves create.
+
+### How fine-tuning fixed it
+
+Fine-tuning here is not teaching the model fraud detection — it already understood fraud, as
+the plain-English test shows. It is **rebalancing one token prediction.**
+
+**LoRA.** All 1.24B original weights are frozen; small rank-8 adjustment matrices are
+inserted alongside them and only those train — **2,818,048 parameters, 0.228% of the model**.
+That is why 7 minutes on a laptop sufficed and the adapter is 11 MB rather than 2.5 GB.
+
+**The training signal.** 43 of 119 training examples answer `true` (36%, against a base prior
+near 3%). Each time the model predicted `false` where the label said `true`, gradient descent
+nudged the adapter weights to raise `P(true)` **conditioned on the evidence in that prompt** —
+so it learns `new_device + foreign_txn + far_from_home → true`, not merely "say true more".
+
+**Why contradictions vanished entirely.** Every training justification is templated from the
+signals that actually fired, so verdict and justification *always agree* in the data:
+
+```json
+{"is_fraud": true, "confidence": 0.67,
+ "justification": "Flagged as fraudulent because it came from a new device, it is a
+                   foreign transaction, and it occurred far from the customer's home."}
+```
+
+119 examples of perfect agreement taught the model to condition the justification on the
+verdict it just emitted, rather than generating two unrelated streams. 43.3% → 0%.
+
+**Why injection resistance improved.** 20 examples carry a redacted note
+(`[REDACTED: prompt-injection attempt detected]`) while the taught answer stays `true` — the
+model learns that a neutralized attack is grounds to convict, not to reconsider. 93.3% → 100%
+unprotected.
+
+**Reading the loss curve.** Loss measures how surprised the model is by the correct answer.
+`4.283 → 0.221 @100 → 0.264 @300`: the rise after iteration 100 is overfitting — with 136
+examples over ~9 epochs the model stops learning the pattern and starts memorizing rows.
+Validation loss is computed on 17 held-out examples, which is the only reason this is
+visible. Hence the iter-100 checkpoint.
+
+**A cheaper fix we did not have time to test.** Two-stage inference: ask in natural language,
+then convert the answer to JSON in a second call. One extra round trip, no training, and it
+should recover most of the lost recall — the plain-English result suggests the judgement is
+already there.
 
 ### Base vs fine-tuned
 
