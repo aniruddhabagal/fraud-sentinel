@@ -32,6 +32,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model", default="llama-3.2-1b-instruct")
     p.add_argument("--base-url", default="http://localhost:1234/v1")
     p.add_argument("--limit", type=int, default=None, help="classify only the first N rows")
+    p.add_argument("--top-risk", type=int, default=None,
+                   help="classify the N highest-risk rows instead of the first N. A "
+                        "chronological slice holds almost no fraud (~3%% base rate), so "
+                        "--limit cannot show whether a model detects anything")
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--adversarial", type=int, default=40, help="size of the injected attack suite")
     p.add_argument("--no-slm", action="store_true", help="rule engine only, no model calls")
@@ -55,6 +59,10 @@ def main() -> None:
     # ---- 2. Sanitize + engineer features ------------------------------------
     print("\n[2/5] sanitizing notes + engineering risk features")
     feat = features.add_features(merged)
+    if args.top_risk:
+        feat = feat.nlargest(args.top_risk, "rule_score")
+        print(f"  selecting the {args.top_risk} highest-risk transactions "
+              f"({int(feat.rule_label.sum())} are policy-positive)")
     n_inj = int(feat["injection_attempt"].sum())
     print(f"  prompt injections neutralized : {n_inj}")
     print(f"  rule-flagged fraud            : {int(feat.rule_label.sum())} "

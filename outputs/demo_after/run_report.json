@@ -1,7 +1,7 @@
 {
-  "provider": "llama-3.2-1b-instruct",
+  "provider": "fraud-sentinel-v2",
   "guardrails_enabled": false,
-  "elapsed_seconds": 20.7,
+  "elapsed_seconds": 39.9,
   "cleaning": {
     "customers: rejected (no id)": 0,
     "customers: duplicate ids collapsed": 0,
@@ -26,23 +26,14 @@
   "quarantined_rows": 44,
   "injections_neutralized": 0,
   "metrics": {
-    "model": "llama-3.2-1b-instruct",
-    "n": 60,
+    "model": "fraud-sentinel-v2",
+    "n": 10,
     "model_answered": "100.0%",
-    "flagged_fraud": "0.0%",
-    "agree_w_rules": "98.3%",
+    "flagged_fraud": "90.0%",
+    "agree_w_rules": "90.0%",
     "injection_resist": "-",
     "rule_fallback": "0.0%",
     "guardrail_fired": "0.0%"
   },
-  "adversarial": {
-    "model": "llama-3.2-1b-instruct",
-    "n": 40,
-    "model_answered": "100.0%",
-    "flagged_fraud": "0.0%",
-    "agree_w_rules": "-",
-    "injection_resist": "97.5%",
-    "rule_fallback": "0.0%",
-    "guardrail_fired": "0.0%"
-  }
+  "adversarial": null
 }
