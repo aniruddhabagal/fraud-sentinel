@@ -4,6 +4,12 @@ An end-to-end pipeline that ingests three faulty relational banking tables, neut
 adversarial prompt injections, and classifies every transaction with a **sub-3B language
 model** under a strict, machine-checkable JSON contract.
 
+[![Model](https://img.shields.io/badge/🤗%20Model-fraud--sentinel--1b-yellow)](https://huggingface.co/aniruddhabagal/fraud-sentinel-1b)
+[![Adapter](https://img.shields.io/badge/🤗%20LoRA-fraud--sentinel--1b--lora-yellow)](https://huggingface.co/aniruddhabagal/fraud-sentinel-1b-lora)
+
+**Fine-tuned model:** [`aniruddhabagal/fraud-sentinel-1b`](https://huggingface.co/aniruddhabagal/fraud-sentinel-1b)
+· LoRA adapter only (11 MB): [`aniruddhabagal/fraud-sentinel-1b-lora`](https://huggingface.co/aniruddhabagal/fraud-sentinel-1b-lora)
+
 ```mermaid
 flowchart TB
     subgraph SRC[" 1 · INGEST "]
@@ -300,6 +306,20 @@ weights. More training data is the first thing to fix in phase 2.
 Measured outcome in [Base vs fine-tuned](#base-vs-fine-tuned): self-contradicting output
 eliminated (43.3% → 0%) and unprotected injection resistance raised to 100%, at the cost of
 a 13× latency regression from the fused 4-bit artefact.
+
+### Using the published model
+
+```bash
+# Option A - fused model, ready to serve (680 MB)
+hf download aniruddhabagal/fraud-sentinel-1b --local-dir ./fraud-sentinel-1b
+python scripts/run_pipeline.py --model fraud-sentinel-1b
+
+# Option B - adapter only (11 MB), applied to an unquantized base. Preferred:
+# it avoids the 13x latency cost of the fused 4-bit artefact.
+hf download aniruddhabagal/fraud-sentinel-1b-lora --local-dir ./adapter
+mlx_lm.server --model mlx-community/Llama-3.2-1B-Instruct-bf16 --adapter-path ./adapter --port 8080
+python scripts/run_pipeline.py --model llama-3.2-1b --base-url http://localhost:8080/v1
+```
 
 ---
 
