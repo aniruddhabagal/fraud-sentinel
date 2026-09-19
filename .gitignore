@@ -22,3 +22,4 @@ executed.ipynb
 # Local / OS
 .DS_Store
 .env
+finetune/dl.log

@@ -1,0 +1,13 @@
+# Core pipeline (required to run scripts/run_pipeline.py)
+pandas>=2.2
+numpy>=1.26
+openai>=1.40          # OpenAI-compatible client for LM Studio / any provider
+
+# Notebook deliverable (required to produce executed.ipynb)
+jupyter>=1.0
+ipykernel>=6.29
+nbconvert>=7.16
+
+# Fine-tuning on Apple Silicon (scripts/finetune.sh only)
+mlx-lm>=0.20
+huggingface_hub>=0.25
