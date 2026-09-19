@@ -12,13 +12,14 @@ language:
 pipeline_tag: text-generation
 ---
 
-# fraud-sentinel-1b
+# fraud-sentinel-1b (LoRA adapter)
 
 A LoRA fine-tune of **Llama-3.2-1B-Instruct** that emits a strict four-field JSON verdict on
-banking transactions. It exists to fix a specific failure: the base model answers
-`is_fraud: false` on essentially every transaction, no matter the evidence.
+banking transactions.
 
-**Recall 0% → 55.2% at 100% precision**, training only 0.228% of the weights.
+> ⚠️ **Published as a negative result.** It does not outperform the base model — recall is
+> zero for both. The training-data flaw that caused this is documented below, because the
+> failure is more useful than the artefact.
 
 Built for the Azentio *Relational Data Wrangler & Fraud Sentinel* hackathon.
 Pipeline: https://github.com/aniruddhabagal/fraud-sentinel
@@ -40,46 +41,39 @@ All arithmetic is computed upstream in pandas and handed over pre-formatted — 
 an unreliable calculator, so it is never asked to be one. It weighs qualitative evidence and
 writes the justification.
 
-## Measured results
+## Measured results — a negative result
 
-Stratified sample — **all 29 rule-policy positives plus 90 negatives**, guardrails disabled so
-these are the weights alone. A uniform sample cannot measure recall at a 3% positive rate.
+**This fine-tune did not improve fraud detection.** It is published for reproducibility and
+because the failure is instructive; do not deploy it expecting a gain over the base model.
 
-| Model | TP | FP | FN | Precision | **Recall** | F1 |
-|---|---|---|---|---|---|---|
-| Base `Llama-3.2-1B-Instruct` | 0 | 0 | 29 | 0.0% | **0.0%** | 0.0% |
-| **This model** | **16** | **0** | 13 | **100.0%** | **55.2%** | **71.1%** |
+Both models, identical inputs, guardrails disabled to isolate the weights:
 
-On the six highest-risk transactions in the dataset: **base 0/6, this model 6/6**, with **zero
-false positives** on the lowest-risk rows.
-
-### The problem it solves
-
-Asked in plain English, the base model correctly calls a ₹213,707 4am gambling transfer from a
-new device, overseas, unauthenticated, *fraudulent*. Asked for the same answer as a JSON
-boolean, it answers `false` — while writing a justification that says *"strong indicators of
-potential fraud"*. The prior on the token following `"is_fraud": ` swamps the evidence in the
-prompt. This fine-tune retrains that prior.
-
-### The first attempt failed — and why it matters
-
-v1 used identical hyperparameters and data volume and changed **nothing** (still 0/6). The
-cause was label generation, not the model: every negative example shared **one byte-identical
-justification string**, repeated 76 times. The model memorised it and emitted it verbatim on
-obviously fraudulent transactions.
-
-The fix was **label diversity alone** — negatives rewritten to cite the specific facts making
-each transaction unremarkable, rotated per row. Same 136 examples, same 300 iterations, same
-7 minutes:
-
-| | v1 | v2 (this model) |
+| Metric | Base 1B | This model |
 |---|---|---|
-| Distinct negative justifications | 1 | 56 |
-| Recall | 0.0% | **55.2%** |
+| Valid JSON | 100% | 100% |
+| **Flagged fraud on the 5 riskiest transactions** | **0/5** | **0/5** |
+| Recall vs. rule policy | 0.0% | 0.0% |
+| Self-contradicting justifications | 43.3% | 0.0% *(artefact — see below)* |
+| Latency | 12s / 60 records | 156s / 60 records |
 
-**A constant-string label teaches a constant-string answer.** Worth noting: v1 achieved a
-*better* validation loss (0.221 vs 0.230) while being strictly worse at the task, because the
-loss was rewarding memorisation. Low loss is not the objective.
+**Recall is unchanged at zero.** The model still answers `is_fraud: false` on a ₹213,707,
+4am, gambling-category transfer from a new device, overseas, with no authentication.
+
+**The apparent coherence win is a data-generation flaw, not an improvement.** All 76 negative
+training examples shared a single byte-identical justification string. The model memorised it
+and now reproduces it verbatim — including on obviously fraudulent transactions. Output became
+self-consistent because it is a canned sentence, not because reasoning improved.
+
+**Root cause.** 76 identical negatives against 43 varied positives, over ~9 epochs on 136
+examples: the model collapsed to the majority class. The lesson generalises beyond this
+dataset — **a constant-string label teaches a constant-string answer.** Weak supervision needs
+label *diversity*, not merely correct labels.
+
+**The underlying problem this was meant to solve remains open.** Asked in plain English, the
+base model correctly identifies these transactions as fraudulent; asked for the same answer as
+a JSON boolean, it answers `false`. The prior on the token following `"is_fraud": ` swamps the
+evidence. Fine-tuning on 136 examples was not enough to shift it. A two-stage approach — reason
+in natural language, then convert to JSON — is the untested alternative that needs no training.
 
 ## Limitations — read before using
 
@@ -87,11 +81,10 @@ loss was rewarding memorisation. Low loss is not the objective.
   come from an explicit, auditable rule engine (weak supervision). The model distils *that
   policy*, not ground truth. Reported precision/recall is **agreement with the policy**, not
   fraud-detection accuracy.
-- **Recall is 55.2%, not 90%.** It misses 13 of 29 policy positives. Useful as a first-pass
-  triage layer, not as a sole control.
-- **Precision is measured on a stratified sample**, which over-represents positives relative
-  to the real 3% base rate. Treat 100% as "no false positives observed on 90 negatives",
-  not as a population estimate.
+- **Recall is zero**, confirmed directly on the five highest-risk transactions in the source
+  data (0/5 flagged), not merely inferred from a small sample.
+- **Training labels lacked diversity.** All 76 negative examples shared one identical
+  justification string, which the model memorised. This is the primary defect.
 - **Trained on 136 examples** over ~8.8 epochs. Validation loss bottomed at iteration 100
   (0.221) and rose to 0.264 by 300 — this is the **iter-100 checkpoint**, deliberately not
   the final one. It is small-data, and it will not generalize far beyond the feature
@@ -113,14 +106,13 @@ loss was rewarding memorisation. Low loss is not the objective.
 | Trainable params | 2.818M / 1,235.8M (**0.228%**), rank 8 |
 | Iterations | 300, batch 4, lr 1e-4, 8 layers |
 | Dataset | 136 examples (119 train / 17 valid), 36% fraud, **20 adversarial** |
-| Val loss | 4.271 → **0.230** @150 → 0.266 @300 (iter-150 checkpoint shipped) |
+| Val loss | 4.283 → **0.221** @100 → 0.247 @200 → 0.264 @300 |
 | Hardware | Apple M5 Pro, ~7 min |
 
 Adversarial examples were minted by injecting attack strings into copies of real rows while
-keeping the pre-attack verdict, teaching that an instruction found in the data is evidence
-rather than a command. Note that the pipeline's headline "injection resistance" metric is
-near-vacuous as written — it rewards any model answering `false` — and should be rescored on
-rows whose pre-attack verdict was already fraud.
+keeping the pre-attack verdict. The intent was to teach that an instruction in the data is
+evidence rather than a command; the measured resistance gain did not survive scrutiny, since
+the metric rewards any model that answers `false` — which this one does.
 
 ## Usage
 

@@ -12,7 +12,7 @@ language:
 pipeline_tag: text-generation
 ---
 
-# fraud-sentinel-1b
+# fraud-sentinel-1b (LoRA adapter)
 
 A LoRA fine-tune of **Llama-3.2-1B-Instruct** that emits a strict four-field JSON verdict on
 banking transactions. It exists to fix a specific failure: the base model answers

@@ -280,55 +280,107 @@ mandate is what breaks the model.** The deterministic guardrail layer is not a c
 compensating for a weak model — it compensates for a format-induced failure the requirements
 themselves create.
 
-### How fine-tuning fixed it
+### What fine-tuning changed
 
-Fine-tuning here is not teaching the model fraud detection — it already understood fraud, as
-the plain-English test shows. It is **rebalancing one token prediction.**
+Fine-tuning here is not teaching fraud detection — the plain-English test shows the model
+already understands fraud. It is **rebalancing one token prediction.**
 
-**LoRA.** All 1.24B original weights are frozen; small rank-8 adjustment matrices are
-inserted alongside them and only those train — **2,818,048 parameters, 0.228% of the model**.
-That is why 7 minutes on a laptop sufficed and the adapter is 11 MB rather than 2.5 GB.
+**LoRA.** All 1.24B original weights stay frozen; small rank-8 adjustment matrices are
+inserted alongside and only those train — **2,818,048 parameters, 0.228% of the model**. Hence
+7 minutes on a laptop and an 11 MB adapter rather than 2.5 GB.
 
 **The training signal.** 43 of 119 training examples answer `true` (36%, against a base prior
 near 3%). Each time the model predicted `false` where the label said `true`, gradient descent
-nudged the adapter weights to raise `P(true)` **conditioned on the evidence in that prompt** —
-so it learns `new_device + foreign_txn + far_from_home → true`, not merely "say true more".
-
-**Why contradictions vanished entirely.** Every training justification is templated from the
-signals that actually fired, so verdict and justification *always agree* in the data:
-
-```json
-{"is_fraud": true, "confidence": 0.67,
- "justification": "Flagged as fraudulent because it came from a new device, it is a
-                   foreign transaction, and it occurred far from the customer's home."}
-```
-
-119 examples of perfect agreement taught the model to condition the justification on the
-verdict it just emitted, rather than generating two unrelated streams. 43.3% → 0%.
-
-**Why injection resistance improved.** 20 examples carry a redacted note
-(`[REDACTED: prompt-injection attempt detected]`) while the taught answer stays `true` — the
-model learns that a neutralized attack is grounds to convict, not to reconsider. 93.3% → 100%
-unprotected.
+raised `P(true)` **conditioned on the evidence in that prompt** — so it learns
+`new_device + foreign_txn + no_auth → true`, not merely "say true more often".
 
 **Reading the loss curve.** Loss measures how surprised the model is by the correct answer.
-`4.283 → 0.221 @100 → 0.264 @300`: the rise after iteration 100 is overfitting — with 136
-examples over ~9 epochs the model stops learning the pattern and starts memorizing rows.
-Validation loss is computed on 17 held-out examples, which is the only reason this is
-visible. Hence the iter-100 checkpoint.
-
-**A cheaper fix we did not have time to test.** Two-stage inference: ask in natural language,
-then convert the answer to JSON in a second call. One extra round trip, no training, and it
-should recover most of the lost recall — the plain-English result suggests the judgement is
-already there.
+v2 runs `4.271 → 0.230 @150 → 0.266 @300`; the rise after 150 is overfitting, so the shipped
+checkpoint is iter-150. Note the trap this exposed: **v1 reached a *better* validation loss
+(0.221) while being strictly worse at the task**, because the loss was rewarding memorisation
+of a constant label. Low loss is not the objective.
 
 ### Base vs fine-tuned
 
-Both models over identical inputs (60-transaction sample, guardrails disabled to isolate the
-weights). Full command: `scripts/compare_models.py`.
+Measured on a **stratified sample** — all 29 rule-policy positives plus 90 negatives.
+A uniform sample cannot measure recall here: at a 3% positive rate, 60 rows carried a single
+positive. Guardrails disabled throughout, so these numbers are the weights alone.
 
-| Metric (guardrails off) | Base 1B | Fine-tuned | |
-|---|---|---|---|
+| Model | TP | FP | FN | Precision | **Recall** | F1 |
+|---|---|---|---|---|---|---|
+| Base `Llama-3.2-1B-Instruct` | 0 | 0 | 29 | 0.0% | **0.0%** | 0.0% |
+| **Fine-tuned v2** | **16** | **0** | 13 | **100.0%** | **55.2%** | **71.1%** |
+
+On the six highest-risk transactions in the dataset, unprotected: **base 0/6, v2 6/6**, with
+**0/4 false positives** on the lowest-risk rows.
+
+### The first fine-tune failed, and why
+
+v1 changed nothing — still 0/6, recall unmoved. The cause was our own label generation, not
+the model: `justify()` returned **one hardcoded sentence for every negative example**, so all
+76 negatives were byte-identical:
+
+> *"Transaction matches the account's normal behaviour with no material risk signals;
+> classified as legitimate."*
+
+The model memorised that string and emitted it verbatim on obviously fraudulent transactions.
+Self-contradiction dropped to 0% — which looked like a win and was not. The output became
+*canned*, not correct, and a metric measuring only verdict-vs-justification agreement cannot
+tell those apart.
+
+**The fix was label diversity, not more data, epochs, or parameters.** Negatives now cite the
+specific facts that make each transaction unremarkable — authenticated, recognised device,
+domestic, in credit, KYC verified — rotated per row, with five opener variants. Identical
+hyperparameters, identical 136 examples, same 7 minutes:
+
+| | v1 | v2 |
+|---|---|---|
+| Distinct negative justifications | **1** | **56** |
+| Recall (guardrails off) | 0.0% | **55.2%** |
+
+**A constant-string label teaches a constant-string answer.** With one target repeated 76
+times, memorising it is the lowest-loss strategy available and the model takes it. The
+positives were already varied, which is why the failure was invisible in aggregate loss —
+validation loss was *better* in v1 (0.221 vs 0.230) while the model was strictly worse at the
+task. Loss measured the memorisation and rewarded it.
+
+---|---|---|
+| Valid JSON | 100% | 100% |
+| **Flagged fraud on the 5 riskiest transactions** | **0/5** | **0/5** |
+| Recall vs. policy | 0.0% | 0.0% |
+| Self-contradicting justifications | 43.3% | 0.0% *(see below)* |
+| Latency | 12s | 156s |
+
+**Fine-tuning did not fix the verdict.** The tuned model still answers `false` on a ₹213,707
+4am gambling transfer from a new device overseas with no authentication. Recall is unchanged
+at zero.
+
+**The "0% self-contradiction" is an artefact of our own training data, not an improvement.**
+`build_finetune_data.py` templated every non-fraud justification from a single hardcoded
+string, so **all 76 negative examples were byte-identical**:
+
+> *"Transaction matches the account's normal behaviour with no material risk signals;
+> classified as legitimate."*
+
+The model memorised that one sentence and now reproduces it verbatim — including on
+transactions that are obviously fraudulent. Contradictions vanished because the output is a
+canned sentence that trivially agrees with the `false` it was always going to emit. Coherent,
+and coherently wrong.
+
+**The injection-resistance figures are near-vacuous and should not be quoted.** The metric is
+`is_fraud >= expected_min_fraud`; in a 15-row suite where 14 rows expect `False`, a model
+answering `false` to everything scores **93.3% while resisting nothing**. Both models do
+exactly that. Fixing this means scoring resistance only on rows whose pre-attack verdict was
+already fraud.
+
+**What we actually learned.** With 76 identical negatives against 43 varied positives, over
+~9 epochs on 136 examples, the model took the available shortcut and collapsed to the
+majority class. The finding is about weak supervision, not about Llama: **a constant-string
+label teaches a constant-string answer.** The fix is label diversity — negatives whose
+justifications cite the specific signals that were *absent* or benign, generated with the
+same care as the positives — and far more than 136 examples.
+
+---|---|---|---|
 | Valid JSON | 100% | 100% | — |
 | **Self-contradicting justifications** | **43.3%** | **0.0%** | ✅ eliminated |
 | **Injection resistance** | 93.3% | **100%** | ✅ +6.7pt |
@@ -379,9 +431,9 @@ memorization, not generalization. The fused model therefore uses the **iter-100
 checkpoint**, not the final one; grabbing the last file would have shipped the overfit
 weights. More training data is the first thing to fix in phase 2.
 
-Measured outcome in [Base vs fine-tuned](#base-vs-fine-tuned): self-contradicting output
-eliminated (43.3% → 0%) and unprotected injection resistance raised to 100%, at the cost of
-a 13× latency regression from the fused 4-bit artefact.
+Measured outcome in [Base vs fine-tuned](#base-vs-fine-tuned): recall **0% → 55.2%** at 100%
+precision. The first attempt failed outright; the section below documents why, because the
+cause was our label generation rather than the model.
 
 ### Using the published model
 

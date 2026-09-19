@@ -1,0 +1,38 @@
+Loading pretrained model
+Loading datasets
+Training
+Trainable parameters: 0.228% (2.818M/1235.814M)
+Starting training..., iters: 300
+Calculating loss...:   0%|          | 0/4 [00:00<?, ?it/s]Calculating loss...:  25%|██▌       | 1/4 [00:01<00:04,  1.55s/it]Calculating loss...:  50%|█████     | 2/4 [00:01<00:01,  1.19it/s]Calculating loss...:  75%|███████▌  | 3/4 [00:02<00:00,  1.63it/s]Calculating loss...: 100%|██████████| 4/4 [00:02<00:00,  1.98it/s]Calculating loss...: 100%|██████████| 4/4 [00:02<00:00,  1.55it/s]
+Iter 1: Val loss 4.271, Val took 2.588s
+Iter 25: Train loss 0.754, Learning Rate 1.000e-04, It/sec 0.686, Tokens/sec 1483.638, Trained Tokens 54066, Peak mem 7.031 GB
+Calculating loss...:   0%|          | 0/4 [00:00<?, ?it/s]Calculating loss...:  25%|██▌       | 1/4 [00:00<00:01,  2.90it/s]Calculating loss...:  50%|█████     | 2/4 [00:00<00:00,  2.89it/s]Calculating loss...:  75%|███████▌  | 3/4 [00:01<00:00,  2.88it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.88it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.88it/s]
+Iter 50: Val loss 0.243, Val took 1.391s
+Iter 50: Train loss 0.241, Learning Rate 1.000e-04, It/sec 0.803, Tokens/sec 1734.161, Trained Tokens 108063, Peak mem 7.031 GB
+Iter 50: Saved adapter weights to finetune/adapters_v2/adapters.safetensors and finetune/adapters_v2/0000050_adapters.safetensors.
+Iter 75: Train loss 0.209, Learning Rate 1.000e-04, It/sec 0.790, Tokens/sec 1706.164, Trained Tokens 162065, Peak mem 7.043 GB
+Calculating loss...:   0%|          | 0/4 [00:00<?, ?it/s]Calculating loss...:  25%|██▌       | 1/4 [00:00<00:01,  2.78it/s]Calculating loss...:  50%|█████     | 2/4 [00:00<00:00,  2.79it/s]Calculating loss...:  75%|███████▌  | 3/4 [00:01<00:00,  2.79it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.79it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.79it/s]
+Iter 100: Val loss 0.230, Val took 1.436s
+Iter 100: Train loss 0.190, Learning Rate 1.000e-04, It/sec 0.799, Tokens/sec 1722.852, Trained Tokens 215982, Peak mem 7.043 GB
+Iter 100: Saved adapter weights to finetune/adapters_v2/adapters.safetensors and finetune/adapters_v2/0000100_adapters.safetensors.
+Iter 125: Train loss 0.161, Learning Rate 1.000e-04, It/sec 0.802, Tokens/sec 1731.758, Trained Tokens 269949, Peak mem 7.043 GB
+Calculating loss...:   0%|          | 0/4 [00:00<?, ?it/s]Calculating loss...:  25%|██▌       | 1/4 [00:00<00:01,  2.84it/s]Calculating loss...:  50%|█████     | 2/4 [00:00<00:00,  2.79it/s]Calculating loss...:  75%|███████▌  | 3/4 [00:01<00:00,  2.77it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.78it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.78it/s]
+Iter 150: Val loss 0.230, Val took 1.439s
+Iter 150: Train loss 0.144, Learning Rate 1.000e-04, It/sec 0.789, Tokens/sec 1704.908, Trained Tokens 323956, Peak mem 7.043 GB
+Iter 150: Saved adapter weights to finetune/adapters_v2/adapters.safetensors and finetune/adapters_v2/0000150_adapters.safetensors.
+Iter 175: Train loss 0.117, Learning Rate 1.000e-04, It/sec 0.791, Tokens/sec 1710.695, Trained Tokens 378037, Peak mem 7.043 GB
+Calculating loss...:   0%|          | 0/4 [00:00<?, ?it/s]Calculating loss...:  25%|██▌       | 1/4 [00:00<00:01,  2.89it/s]Calculating loss...:  50%|█████     | 2/4 [00:00<00:00,  2.86it/s]Calculating loss...:  75%|███████▌  | 3/4 [00:01<00:00,  2.82it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.82it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.83it/s]
+Iter 200: Val loss 0.248, Val took 1.415s
+Iter 200: Train loss 0.097, Learning Rate 1.000e-04, It/sec 0.795, Tokens/sec 1715.690, Trained Tokens 432010, Peak mem 7.043 GB
+Iter 200: Saved adapter weights to finetune/adapters_v2/adapters.safetensors and finetune/adapters_v2/0000200_adapters.safetensors.
+Iter 225: Train loss 0.081, Learning Rate 1.000e-04, It/sec 0.780, Tokens/sec 1686.710, Trained Tokens 486044, Peak mem 7.043 GB
+Calculating loss...:   0%|          | 0/4 [00:00<?, ?it/s]Calculating loss...:  25%|██▌       | 1/4 [00:00<00:01,  2.77it/s]Calculating loss...:  50%|█████     | 2/4 [00:00<00:00,  2.71it/s]Calculating loss...:  75%|███████▌  | 3/4 [00:01<00:00,  2.71it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.70it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.71it/s]
+Iter 250: Val loss 0.267, Val took 1.479s
+Iter 250: Train loss 0.069, Learning Rate 1.000e-04, It/sec 0.775, Tokens/sec 1675.648, Trained Tokens 540113, Peak mem 7.043 GB
+Iter 250: Saved adapter weights to finetune/adapters_v2/adapters.safetensors and finetune/adapters_v2/0000250_adapters.safetensors.
+Iter 275: Train loss 0.057, Learning Rate 1.000e-04, It/sec 0.773, Tokens/sec 1668.067, Trained Tokens 594074, Peak mem 7.043 GB
+Calculating loss...:   0%|          | 0/4 [00:00<?, ?it/s]Calculating loss...:  25%|██▌       | 1/4 [00:00<00:01,  2.80it/s]Calculating loss...:  50%|█████     | 2/4 [00:00<00:00,  2.78it/s]Calculating loss...:  75%|███████▌  | 3/4 [00:01<00:00,  2.73it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.70it/s]Calculating loss...: 100%|██████████| 4/4 [00:01<00:00,  2.72it/s]
+Iter 300: Val loss 0.266, Val took 1.471s
+Iter 300: Train loss 0.053, Learning Rate 1.000e-04, It/sec 0.779, Tokens/sec 1681.403, Trained Tokens 648065, Peak mem 7.043 GB
+Iter 300: Saved adapter weights to finetune/adapters_v2/adapters.safetensors and finetune/adapters_v2/0000300_adapters.safetensors.
+Saved final weights to finetune/adapters_v2/adapters.safetensors.

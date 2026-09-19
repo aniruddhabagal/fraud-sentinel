@@ -76,22 +76,81 @@ PHRASING = {
 }
 
 
+# Benign facts a negative justification can cite, each paired with the condition that
+# makes it true of a given row. A negative must name what is *specifically* reassuring
+# about the transaction in front of it.
+REASSURING = [
+    ("the amount is in line with this account's normal spend",
+     lambda r: r["amount_ratio"] < 2.0),
+    ("it was authenticated", lambda r: not r["no_auth"]),
+    ("it came from a recognised device", lambda r: not r["new_device"]),
+    ("it is a domestic transaction", lambda r: not r["foreign_txn"]),
+    ("it occurred close to the customer's home location", lambda r: not r["far_from_home"]),
+    ("it occurred during normal hours", lambda r: not r["odd_hour"]),
+    ("the merchant category is low-risk", lambda r: not r["high_risk_mcc"]),
+    ("the account remains in credit", lambda r: not r["overdrawn"]),
+    ("the customer's KYC is verified", lambda r: not r["weak_kyc"]),
+    ("the customer carries a low risk rating", lambda r: not r["high_risk_customer"]),
+    ("transaction velocity is normal", lambda r: not r["velocity_24h"]),
+    ("the transaction completed cleanly", lambda r: not r["failed_or_reversed"]),
+]
+
+NEGATIVE_OPENERS = [
+    "Classified as legitimate because {body}.",
+    "No fraud indicated: {body}.",
+    "Consistent with normal account activity - {body}.",
+    "Assessed as legitimate; {body}.",
+    "Behaviour is unremarkable here because {body}.",
+]
+
+POSITIVE_OPENERS = [
+    "Flagged as fraudulent because {body}.",
+    "Fraud indicated: {body}.",
+    "Escalated for review because {body}.",
+    "High fraud risk - {body}.",
+    "Marked fraudulent; {body}.",
+]
+
+
+def _join(reasons: list[str]) -> str:
+    if not reasons:
+        return "no material risk signals are present"
+    if len(reasons) == 1:
+        return reasons[0]
+    return ", ".join(reasons[:-1]) + f", and {reasons[-1]}"
+
+
 def justify(row: pd.Series, is_fraud: bool, injected: bool) -> str:
-    """Template a one-sentence justification from the signals that actually fired."""
+    """Template a one-sentence justification grounded in this row's actual signals.
+
+    Negatives cite the specific facts that make *this* transaction unremarkable rather
+    than repeating a constant string. An earlier version returned one hardcoded sentence
+    for every negative; with 76 byte-identical targets the model simply memorized it and
+    emitted it on obviously fraudulent rows. Label diversity is what stops that.
+    """
     fired = [f for f in row["rule_flags"].split(", ") if f and f != "none"]
     if injected and "injection_attempt" not in fired:
         fired.insert(0, "injection_attempt")
 
+    # Rotate phrasing deterministically off the transaction id so the set is varied
+    # but regenerating it is reproducible.
+    seed = abs(hash(row["transaction_id"]))
+
     if not is_fraud:
-        return ("Transaction matches the account's normal behaviour with no material "
-                "risk signals; classified as legitimate.")
+        true_of_row = [text for text, cond in REASSURING if bool(cond(row))]
+        # Rotate which reassuring facts get cited, so no two negatives read alike.
+        if true_of_row:
+            start = seed % len(true_of_row)
+            picked = [true_of_row[(start + i) % len(true_of_row)]
+                      for i in range(min(3, len(true_of_row)))]
+        else:
+            picked = []
+        opener = NEGATIVE_OPENERS[seed % len(NEGATIVE_OPENERS)]
+        return opener.format(body=_join(picked))
 
     reasons = [PHRASING.get(f, f.replace("_", " ")) for f in fired[:3]]
-    if len(reasons) > 1:
-        body = ", ".join(reasons[:-1]) + f", and {reasons[-1]}"
-    else:
-        body = reasons[0] if reasons else "multiple risk signals are present"
-    return f"Flagged as fraudulent because {body}."
+    opener = POSITIVE_OPENERS[seed % len(POSITIVE_OPENERS)]
+    return opener.format(body=_join(reasons))
 
 
 def confidence_for(score: float, is_fraud: bool, injected: bool) -> float:
