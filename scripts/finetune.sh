@@ -8,9 +8,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MODEL="${MODEL:-models/Llama-3.2-1B-Instruct-bf16}"
-ADAPTERS="${ADAPTERS:-finetune/adapters}"
-FUSED="${FUSED:-finetune/fused-model}"
+MODEL="${MODEL:-models/Llama-3.2-1B-Instruct-4bit}"
+ADAPTERS="${ADAPTERS:-finetune/adapters_v2}"
+BEST="${BEST:-finetune/adapters_v2_best}"
+FUSED="${FUSED:-finetune/fused-v2}"
+BEST_ITER="${BEST_ITER:-150}"
 ITERS="${ITERS:-300}"
 PY=.venv/bin/python
 
@@ -23,21 +25,26 @@ echo "==> [1/3] LoRA training ($ITERS iters) on $MODEL"
 $PY -m mlx_lm lora \
   --model "$MODEL" --train --data finetune/data --adapter-path "$ADAPTERS" \
   --batch-size 4 --iters "$ITERS" --num-layers 8 --learning-rate 1e-4 \
-  --steps-per-report 20 --steps-per-eval 150 --save-every 150 --max-seq-length 1536
+  --steps-per-report 25 --steps-per-eval 50 --save-every 50 --max-seq-length 1536
 
-echo "==> [2/3] fusing adapter into a standalone model"
-$PY -m mlx_lm fuse --model "$MODEL" --adapter-path "$ADAPTERS" --save-path "$FUSED"
+# Validation loss bottoms around iter 150 and rises after; the final checkpoint is
+# overfit. Fuse the best one, not the last one.
+echo "==> [2/3] fusing the iter-$BEST_ITER checkpoint (not the final, which overfits)"
+mkdir -p "$BEST"
+cp "$ADAPTERS/adapter_config.json" "$BEST/"
+cp "$ADAPTERS/$(printf '%07d' "$BEST_ITER")_adapters.safetensors" "$BEST/adapters.safetensors"
+$PY -m mlx_lm fuse --model "$MODEL" --adapter-path "$BEST" --save-path "$FUSED"
 
 if [ -n "${HF_REPO:-}" ]; then
   echo "==> [3/3] uploading to https://huggingface.co/$HF_REPO"
   .venv/bin/hf upload "$HF_REPO" "$FUSED" . --repo-type model
-  echo "    adapter-only (small) copy:"
-  .venv/bin/hf upload "$HF_REPO" "$ADAPTERS" adapters --repo-type model
+  echo "    adapter-only (11 MB) copy:"
+  .venv/bin/hf upload "${HF_REPO}-lora" "$BEST" . --repo-type model
 else
   echo "==> [3/3] upload skipped (set HF_REPO=user/name to publish)"
 fi
 
 echo
 echo "Done. Load the fused model in LM Studio:"
-echo "  cp -r $FUSED ~/.lmstudio/models/local/fraud-sentinel-1b"
-echo "  lms load local/fraud-sentinel-1b"
+echo "  cp -r $FUSED ~/.lmstudio/models/local/fraud-sentinel-v2"
+echo "  lms load fraud-sentinel-v2"
