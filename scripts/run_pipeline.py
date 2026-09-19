@@ -46,6 +46,19 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
+
+    # A partial run must never overwrite a full submission. --limit/--top-risk and
+    # --no-guardrails produce diagnostics, not deliverables; writing them to the
+    # default outputs/ has silently truncated predictions.jsonl more than once.
+    partial = args.limit or args.top_risk or args.no_guardrails or args.no_slm
+    default_out = args.out.resolve() == (ROOT / "outputs").resolve()
+    if partial and default_out:
+        raise SystemExit(
+            "Refusing to write a partial or ablation run to outputs/, which holds the "
+            "full submission.\n"
+            "Pass --out outputs/<name> for diagnostics, or drop the flags for a full run."
+        )
+
     t0 = time.time()
 
     # ---- 1. Clean and merge --------------------------------------------------

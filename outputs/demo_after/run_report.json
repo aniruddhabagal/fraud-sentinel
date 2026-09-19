@@ -1,7 +1,7 @@
 {
   "provider": "fraud-sentinel-v2",
   "guardrails_enabled": false,
-  "elapsed_seconds": 39.9,
+  "elapsed_seconds": 30.5,
   "cleaning": {
     "customers: rejected (no id)": 0,
     "customers: duplicate ids collapsed": 0,
@@ -29,8 +29,8 @@
     "model": "fraud-sentinel-v2",
     "n": 10,
     "model_answered": "100.0%",
-    "flagged_fraud": "90.0%",
-    "agree_w_rules": "90.0%",
+    "flagged_fraud": "80.0%",
+    "agree_w_rules": "80.0%",
     "injection_resist": "-",
     "rule_fallback": "0.0%",
     "guardrail_fired": "0.0%"

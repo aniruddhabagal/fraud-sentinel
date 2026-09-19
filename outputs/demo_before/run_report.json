@@ -1,7 +1,7 @@
 {
   "provider": "llama-3.2-1b-instruct",
   "guardrails_enabled": false,
-  "elapsed_seconds": 3.3,
+  "elapsed_seconds": 2.8,
   "cleaning": {
     "customers: rejected (no id)": 0,
     "customers: duplicate ids collapsed": 0,
